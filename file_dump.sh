@@ -1,4 +1,3 @@
-# file_dump/file_dump.sh
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -6,7 +5,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <directory> [--range N:M] [--output FILE]
 
-  <directory>      Directory whose files will be dumped.
+  <directory>      Directory whose files will be dumped (recursively).
   --range N:M      Dump only the N-th through M-th files (1-based, alphabetical).
   --output FILE    Path of the output file (default: ./file_dump.txt).
 
@@ -61,7 +60,8 @@ if [[ -f "$EXCLUDE_FILE" ]]; then
   done <"$EXCLUDE_FILE"
 fi
 
-mapfile -d '' FILES < <(find "$DIR" -maxdepth 1 -type f -printf '%f\0' | sort -z)
+# Collect relative paths (full tree)
+mapfile -d '' FILES < <(find "$DIR" -type f -printf '%P\0' | sort -z)
 
 # filter exclusions
 tmp=()
@@ -88,6 +88,16 @@ fi
 SLICE=("${FILES[@]:$((RANGE_START-1)):$((RANGE_END-RANGE_START+1))}")
 
 : >"$OUTFILE"
+
+# Optional: tree dump at top if available
+if command -v tree >/dev/null; then
+  {
+    echo "# Directory structure:"
+    tree -a "$DIR"
+    echo -e "\n"
+  } >>"$OUTFILE"
+fi
+
 for fname in "${SLICE[@]}"; do
   {
     printf '===== %s =====\n' "$fname"
