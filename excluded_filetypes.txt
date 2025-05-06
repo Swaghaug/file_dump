@@ -1,8 +1,10 @@
-# file_dump/excluded_filetypes.txt
 # One extension per line, leading dot, lowercase.
-# Edit to fit your needs.
+# Edit or prune to fit your needs.
 
-# ML / model checkpoints
+# ─── Git ────────────────────────────────────────────────────────────
+.gitignore
+
+# ─── ML / model checkpoints ─────────────────────────────────────────
 .pt
 .bin
 .weights
@@ -10,7 +12,7 @@
 .onnx
 .tflite
 
-# Documents & office
+# ─── Documents & office ────────────────────────────────────────────
 .pdf
 .doc
 .docx
@@ -23,7 +25,8 @@
 .odp
 .rtf
 
-# Images
+
+# ─── Images / graphics ─────────────────────────────────────────────
 .jpg
 .jpeg
 .png
@@ -37,14 +40,14 @@
 .ai
 .eps
 
-# Audio
+# ─── Audio ─────────────────────────────────────────────────────────
 .mp3
 .wav
 .flac
 .ogg
 .m4a
 
-# Video
+# ─── Video ─────────────────────────────────────────────────────────
 .mp4
 .mkv
 .mov
@@ -53,7 +56,7 @@
 .flv
 .swf
 
-# Archives
+# ─── Archives & bundles ────────────────────────────────────────────
 .zip
 .tar
 .tgz
@@ -65,13 +68,49 @@
 .rar
 .iso
 
-# Binaries / libs
+# ─── Binaries / libraries ──────────────────────────────────────────
 .exe
 .dll
 .so
 .dylib
 .a
 .o
+.lib        # static libs (MSVC)
+.obj        # object files (MSVC)
 .class
 .jar
 .wasm
+.pdb        # Windows debug symbols
+.dSYM       # macOS debug bundles (directory but keep for safety)
+
+# ─── Python artefacts ──────────────────────────────────────────────
+.pyc
+.pyo
+.pyd
+.whl
+.egg
+.egg-info
+.pyz
+.pip
+.pycache     # directory marker; included for clarity
+.lock        # pipenv/poetry lockfiles (large, rarely needed in dumps)
+
+# ─── Rust / Cargo artefacts ────────────────────────────────────────
+.rlib
+.rmeta
+.crate
+.d          # dependency files (gcc/clang)
+.ll         # LLVM IR dumps
+
+# ─── .NET / C# artefacts ───────────────────────────────────────────
+.nupkg
+.snupkg
+
+# ─── JavaScript / Node / frontend bundles ─────────────────────────
+.node       # native node modules
+.bundle.js
+.min.js
+.map
+.br         # Brotli-compressed bundles
+
+
