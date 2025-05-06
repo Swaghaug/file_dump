@@ -37,6 +37,8 @@ to **~/.bashrc**. Reload with `source ~/.bashrc`.
 binary/media extensions – adjust as you like. The script compares extensions
 case-insensitively.
 
+**Lines that end with "/" = skip *directory* anywhere.**
+
 ---
 
 ## Options

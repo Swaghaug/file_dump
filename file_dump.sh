@@ -9,7 +9,10 @@ Usage: $(basename "$0") <directory> [--range N:M] [--output FILE]
   --range N:M      Dump only the N-th through M-th files (1-based, alphabetical).
   --output FILE    Path of the output file (default: ./file_dump.txt).
 
-Excludes filetypes listed in: \$(dirname "\$0")/excluded_filetypes.txt
+Exclusions come from: \$(dirname "\$0")/excluded_filetypes.txt
+  • Lines ending with "/" are treated as *directory names* to skip anywhere
+    in the tree (e.g. ".git/", "node_modules/").
+  • Other lines (starting with ".") are file-extension filters (e.g. ".pdf").
 
 Examples
   $(basename "$0") ./assets
@@ -51,39 +54,49 @@ done
 [[ -d "$DIR" ]] || { echo "Error: '$DIR' is not a directory." >&2; exit 2; }
 
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-EXCLUDE_FILE="$SCRIPT_DIR/excluded_filetypes.txt"
-declare -a EXCLUDE_EXT=()
-if [[ -f "$EXCLUDE_FILE" ]]; then
+EXCL_FILE="$SCRIPT_DIR/excluded_filetypes.txt"
+
+declare -a EXCL_EXT=() EXCL_DIR=()
+if [[ -f "$EXCL_FILE" ]]; then
   while IFS= read -r line; do
     [[ -z "$line" || "$line" =~ ^# ]] && continue
-    EXCLUDE_EXT+=("$line")
-  done <"$EXCLUDE_FILE"
+    if [[ "$line" == */ ]]; then
+      EXCL_DIR+=("${line%/}")
+    else
+      EXCL_EXT+=("$line")
+    fi
+  done <"$EXCL_FILE"
 fi
 
 # Collect relative paths (full tree)
 mapfile -d '' FILES < <(find "$DIR" -type f -printf '%P\0' | sort -z)
 
 # filter exclusions
-tmp=()
+filtered=()
 for f in "${FILES[@]}"; do
-  ext=".${f##*.}"
-  ext="${ext,,}"       # lower-case
   skip=0
-  for ex in "${EXCLUDE_EXT[@]}"; do
-    if [[ "$ext" == "$ex" ]]; then skip=1; break; fi
+
+  # directory-name filters
+  for d in "${EXCL_DIR[@]}"; do
+    if [[ "$f" == "$d/"* || "$f" == */"$d/"* ]]; then skip=1; break; fi
   done
-  ((skip)) || tmp+=("$f")
+  ((skip)) && continue
+
+  # extension filters
+  ext=".${f##*.}"; ext="${ext,,}"
+  for e in "${EXCL_EXT[@]}"; do
+    [[ "$ext" == "$e" ]] && { skip=1; break; }
+  done
+  ((skip)) || filtered+=("$f")
 done
-FILES=("${tmp[@]}")
+FILES=("${filtered[@]}")
 
 TOTAL=${#FILES[@]}
 [[ $TOTAL -eq 0 ]] && { echo "No eligible files found in '$DIR'." >&2; exit 0; }
 
 (( RANGE_END == 0 || RANGE_END > TOTAL )) && RANGE_END=$TOTAL
-if (( RANGE_START < 1 || RANGE_START > RANGE_END || RANGE_END > TOTAL )); then
-  echo "Error: --range $RANGE_START:$RANGE_END is out of bounds (1-$TOTAL)." >&2
-  exit 3
-fi
+(( RANGE_START < 1 || RANGE_START > RANGE_END || RANGE_END > TOTAL )) && {
+  echo "Error: --range $RANGE_START:$RANGE_END is out of bounds (1-$TOTAL)." >&2; exit 3; }
 
 SLICE=("${FILES[@]:$((RANGE_START-1)):$((RANGE_END-RANGE_START+1))}")
 
