@@ -1,10 +1,25 @@
-# One extension per line, leading dot, lowercase.
-# Edit or prune to fit your needs.
+# One entry per line.  Lines that end with "/" = skip *directory* anywhere.
+# Lines starting with "." = skip all files with that extension (case-insensitive)
 
-# ─── Git ────────────────────────────────────────────────────────────
+# ─── VCS / build directories ───────────────────────────────────────
+.git/
+.svn/
+.hg/
+.idea/
+.vscode/
+node_modules/
+dist/
+build/
+target/          # Rust / Maven
+obj/             # .NET / C
+bin/             # build outputs
+
+# ─── Git files that may appear outside .git ─────────────────────────
 .gitignore
+.gitattributes
+.gitmodules
 
-# ─── ML / model checkpoints ─────────────────────────────────────────
+# ─── ML / model checkpoints ────────────────────────────────────────
 .pt
 .bin
 .weights
@@ -75,13 +90,13 @@
 .dylib
 .a
 .o
-.lib        # static libs (MSVC)
-.obj        # object files (MSVC)
+.lib
+.obj
 .class
 .jar
 .wasm
-.pdb        # Windows debug symbols
-.dSYM       # macOS debug bundles (directory but keep for safety)
+.pdb
+.dsym
 
 # ─── Python artefacts ──────────────────────────────────────────────
 .pyc
@@ -91,26 +106,23 @@
 .egg
 .egg-info
 .pyz
-.pip
-.pycache     # directory marker; included for clarity
-.lock        # pipenv/poetry lockfiles (large, rarely needed in dumps)
+.pycache
+.lock
 
 # ─── Rust / Cargo artefacts ────────────────────────────────────────
 .rlib
 .rmeta
 .crate
-.d          # dependency files (gcc/clang)
-.ll         # LLVM IR dumps
+.d
+.ll
 
 # ─── .NET / C# artefacts ───────────────────────────────────────────
 .nupkg
 .snupkg
 
-# ─── JavaScript / Node / frontend bundles ─────────────────────────
-.node       # native node modules
+# ─── JavaScript / frontend bundles ────────────────────────────────
+.node
 .bundle.js
 .min.js
 .map
-.br         # Brotli-compressed bundles
-
-
+.br
