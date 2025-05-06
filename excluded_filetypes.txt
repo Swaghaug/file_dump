@@ -1,0 +1,77 @@
+# file_dump/excluded_filetypes.txt
+# One extension per line, leading dot, lowercase.
+# Edit to fit your needs.
+
+# ML / model checkpoints
+.pt
+.bin
+.weights
+.ckpt
+.onnx
+.tflite
+
+# Documents & office
+.pdf
+.doc
+.docx
+.ppt
+.pptx
+.xls
+.xlsx
+.odt
+.ods
+.odp
+.rtf
+
+# Images
+.jpg
+.jpeg
+.png
+.gif
+.bmp
+.tif
+.tiff
+.webp
+.ico
+.psd
+.ai
+.eps
+
+# Audio
+.mp3
+.wav
+.flac
+.ogg
+.m4a
+
+# Video
+.mp4
+.mkv
+.mov
+.avi
+.wmv
+.flv
+.swf
+
+# Archives
+.zip
+.tar
+.tgz
+.tbz2
+.gz
+.bz2
+.xz
+.7z
+.rar
+.iso
+
+# Binaries / libs
+.exe
+.dll
+.so
+.dylib
+.a
+.o
+.class
+.jar
+.wasm
