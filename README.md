@@ -4,7 +4,7 @@ Dump one or more files (alphabetical order) into a single text file – handy fo
 outputting to LLMs, quick diffs, reviews, or email pastes.
 
 ```bash
-fdump                 # dump every tracked file in the current Git repo
+fdump                 # dump every file in current repo
 fdump --range 10:15   # restrict to a slice
 fdump /etc --output etc.txt
 ```
