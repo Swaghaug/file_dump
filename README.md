@@ -1,7 +1,7 @@
 # file_dump
 
 Dump one or more files (alphabetical order) into a single text file – handy for
-quick diffs, reviews, or email pastes.
+outputting to LLMs, quick diffs, reviews, or email pastes.
 
 ```bash
 fdump                 # dump every tracked file in the current Git repo
