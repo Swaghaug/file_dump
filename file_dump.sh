@@ -53,11 +53,11 @@ done
 
 [[ -d "$DIR" ]] || { echo "Error: '$DIR' is not a directory." >&2; exit 2; }
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-EXCL_FILE="$SCRIPT_DIR/excluded_filetypes.txt"
 
 declare -a EXCL_EXT=() EXCL_DIR=()
-if [[ -f "$EXCL_FILE" ]]; then
+add_rules() {
+  local file=$1
+  [[ -f "$file" ]] || return
   while IFS= read -r line; do
     [[ -z "$line" || "$line" =~ ^# ]] && continue
     if [[ "$line" == */ ]]; then
@@ -65,8 +65,10 @@ if [[ -f "$EXCL_FILE" ]]; then
     else
       EXCL_EXT+=("$line")
     fi
-  done <"$EXCL_FILE"
-fi
+  done <"$file"
+}
+add_rules "$(dirname "$(readlink -f "$0")")/excluded_filetypes.txt"
+add_rules "$DIR/excluded_filetypes.txt"
 
 # Collect relative paths (full tree)
 mapfile -d '' FILES < <(find "$DIR" -type f -printf '%P\0' | sort -z)
