@@ -17,6 +17,7 @@ fdump /etc --output etc.txt
 ```bash
 git clone https://github.com/<your-username>/file_dump.git
 cd file_dump
+chmod +x install.sh file_dump.sh
 ./install.sh
 ```
 
