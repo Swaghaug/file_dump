@@ -3,38 +3,79 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <directory> [--range N:M] [--output FILE]
+Usage: $(basename "$0") [--path DIR] [<directory>] [--git-root] [--range N:M] [--include PATTERNS] [--output FILE]
 
-  <directory>      Directory whose files will be dumped (recursively).
-  --range N:M      Dump only the N-th through M-th files (1-based, alphabetical).
-  --output FILE    Path of the output file (default: ./file_dump.txt).
+  --path DIR           Target directory to dump (recursive). Overrides positional <directory>.
+  <directory>          Back-compat positional path; ignored if --path is given.
+  --git-root           Ignore --path/positional/PWD and use the current Git repo root.
+  --range N:M          Dump only the N-th through M-th files (1-based, alphabetical).
+  --include PATTERNS   Comma-separated shell globs to include (e.g. '*.yml,*.yaml').
+                       When provided, only matching files are included.
+  --output FILE        Path of the output file (default: ./file_dump.txt).
 
-Exclusions come from: \$(dirname "\$0")/excluded_filetypes.txt
-  • Lines ending with "/" are treated as *directory names* to skip anywhere
-    in the tree (e.g. ".git/", "node_modules/").
-  • Other lines (starting with ".") are file-extension filters (e.g. ".pdf").
+If neither --git-root nor --path nor a positional <directory> is provided, the script targets PWD.
+
+Exclusions come from 'excluded_filetypes.txt' searched in order:
+  1) Directory of this script
+  2) <target-directory>/excluded_filetypes.txt
+  3) \$XDG_CONFIG_HOME/file_dump/excluded_filetypes.txt
+  4) \$HOME/.config/file_dump/excluded_filetypes.txt
+If none are found, a built-in default exclusion list is used.
 
 Examples
-  $(basename "$0") ./assets
-  $(basename "$0") ./src --range 5:8 --output partial.txt
+  $(basename "$0")                                        # dump PWD
+  $(basename "$0") --path ./services --include '*.yml,*.yaml' --output compose.txt
+  $(basename "$0") --git-root --include '*.yml,*.yaml'    # dump repo root
+  $(basename "$0") ./src --range 5:8 --output partial.txt # legacy positional path
 EOF
   exit 1
 }
 
-[[ $# -lt 1 ]] && usage
-
-DIR="$1"
-shift
+# Resolve script directory robustly
+SCRIPT_INVOCATION="${BASH_SOURCE[0]:-$0}"
+SCRIPT_PATH="$(command -v "$SCRIPT_INVOCATION" || true)"
+if [[ -z "$SCRIPT_PATH" ]]; then
+  SCRIPT_PATH="$SCRIPT_INVOCATION"
+fi
+SCRIPT_DIR="$(dirname "$(readlink -f "$SCRIPT_PATH")")"
 
 RANGE_START=1
 RANGE_END=0
 OUTFILE="file_dump.txt"
+USE_GIT_ROOT=0
+PATH_ARG=""
+declare -a INCLUDE_GLOBS=()
 
+# Accept optional first arg as directory unless it's a flag (back-compat)
+POS_DIR=""
+if (( $# > 0 )) && [[ ! "${1:-}" =~ ^- ]]; then
+  POS_DIR="$1"
+  shift
+fi
+
+# Parse flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --path)
+      [[ $# -lt 2 ]] && usage
+      PATH_ARG="$2"
+      shift 2
+      ;;
+    --git-root)
+      USE_GIT_ROOT=1
+      shift
+      ;;
     --range)
       [[ $# -lt 2 ]] && usage
       IFS=: read -r RANGE_START RANGE_END <<<"$2"
+      shift 2
+      ;;
+    --include)
+      [[ $# -lt 2 ]] && usage
+      IFS=',' read -r -a parts <<<"$2"
+      for p in "${parts[@]}"; do
+        [[ -n "$p" ]] && INCLUDE_GLOBS+=("$p")
+      done
       shift 2
       ;;
     --output)
@@ -51,50 +92,201 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -d "$DIR" ]] || { echo "Error: '$DIR' is not a directory." >&2; exit 2; }
+# Determine target directory (precedence: --git-root > --path > positional > PWD)
+if (( USE_GIT_ROOT == 1 )); then
+  if git_root="$(git -C . rev-parse --show-toplevel 2>/dev/null)"; then
+    DIR="$git_root"
+  else
+    echo "Error: --git-root used outside a git repository." >&2
+    exit 2
+  fi
+elif [[ -n "$PATH_ARG" ]]; then
+  DIR="$PATH_ARG"
+elif [[ -n "$POS_DIR" ]]; then
+  DIR="$POS_DIR"
+else
+  DIR="$(pwd)"
+fi
 
+[[ -d "$DIR" ]] || { echo "Error: '$DIR' is not a directory." >&2; exit 2; }
 
 declare -a EXCL_EXT=() EXCL_DIR=()
 add_rules() {
   local file=$1
   [[ -f "$file" ]] || return
   while IFS= read -r line; do
-    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     if [[ "$line" == */ ]]; then
       EXCL_DIR+=("${line%/}")
     else
-      EXCL_EXT+=("$line")
+      EXCL_EXT+=("${line,,}")
     fi
   done <"$file"
 }
-add_rules "$(dirname "$(readlink -f "$0")")/excluded_filetypes.txt"
-add_rules "$DIR/excluded_filetypes.txt"
 
-# Collect relative paths (full tree)
+add_default_rules_if_empty() {
+  if (( ${#EXCL_EXT[@]} == 0 && ${#EXCL_DIR[@]} == 0 )); then
+    while IFS= read -r line; do
+      [[ -z "$line" || "$line" =~ ^# ]] && continue
+      if [[ "$line" == */ ]]; then
+        EXCL_DIR+=("${line%/}")
+      else
+        EXCL_EXT+=("${line,,}")
+      fi
+    done <<'DEFAULT_RULES'
+.git/
+.svn/
+.hg/
+.idea/
+.vscode/
+node_modules/
+dist/
+build/
+target/
+obj/
+bin/
+.gitignore
+.gitattributes
+.gitmodules
+.pt
+.bin
+.weights
+.ckpt
+.onnx
+.tflite
+.pdf
+.doc
+.docx
+.ppt
+.pptx
+.xls
+.xlsx
+.odt
+.ods
+.odp
+.rtf
+.jpg
+.jpeg
+.png
+.gif
+.bmp
+.tif
+.tiff
+.webp
+.ico
+.psd
+.ai
+.eps
+.mp3
+.wav
+.flac
+.ogg
+.m4a
+.mp4
+.mkv
+.mov
+.avi
+.wmv
+.flv
+.swf
+.zip
+.tar
+.tgz
+.tbz2
+.gz
+.bz2
+.xz
+.7z
+.rar
+.iso
+.exe
+.dll
+.so
+.dylib
+.a
+.o
+.lib
+.obj
+.class
+.jar
+.wasm
+.pdb
+.dsym
+.pyc
+.pyo
+.pyd
+.whl
+.egg
+.egg-info
+.pyz
+.pycache
+.lock
+.rlib
+.rmeta
+.crate
+.d
+.ll
+.nupkg
+.snupkg
+.node
+.bundle.js
+.min.js
+.map
+.br
+DEFAULT_RULES
+  fi
+}
+
+# Load exclusion rules (merge if multiple exist)
+add_rules "$SCRIPT_DIR/excluded_filetypes.txt"
+add_rules "$DIR/excluded_filetypes.txt"
+if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+  add_rules "$XDG_CONFIG_HOME/file_dump/excluded_filetypes.txt"
+fi
+add_rules "$HOME/.config/file_dump/excluded_filetypes.txt"
+add_default_rules_if_empty
+
+# Collect relative paths
 mapfile -d '' FILES < <(find "$DIR" -type f -printf '%P\0' | sort -z)
 
-# filter exclusions
+# Filter exclusions and includes
 filtered=()
 for f in "${FILES[@]}"; do
   skip=0
 
   # directory-name filters
   for d in "${EXCL_DIR[@]}"; do
-    if [[ "$f" == "$d/"* || "$f" == */"$d/"* ]]; then skip=1; break; fi
+    if [[ "$f" == "$d/"* || "$f" == */"$d/"* || "$f" == "$d" ]]; then
+      skip=1; break
+    fi
   done
   ((skip)) && continue
 
   # extension filters
   ext=".${f##*.}"; ext="${ext,,}"
   for e in "${EXCL_EXT[@]}"; do
-    [[ "$ext" == "$e" ]] && { skip=1; break; }
+    if [[ "$ext" == "$e" ]]; then skip=1; break; fi
   done
-  ((skip)) || filtered+=("$f")
+  ((skip)) && continue
+
+  # include-glob filters (if provided)
+  if (( ${#INCLUDE_GLOBS[@]} > 0 )); then
+    inc=0
+    for pat in "${INCLUDE_GLOBS[@]}"; do
+      if [[ "$f" == $pat ]]; then inc=1; break; fi
+    done
+    ((inc)) || continue
+  fi
+
+  filtered+=("$f")
 done
 FILES=("${filtered[@]}")
 
 TOTAL=${#FILES[@]}
-[[ $TOTAL -eq 0 ]] && { echo "No eligible files found in '$DIR'." >&2; exit 0; }
+if [[ $TOTAL -eq 0 ]]; then
+  echo "No eligible files found in '$DIR'. Wrote nothing to '$OUTFILE'." >&2
+  exit 0
+fi
 
 (( RANGE_END == 0 || RANGE_END > TOTAL )) && RANGE_END=$TOTAL
 (( RANGE_START < 1 || RANGE_START > RANGE_END || RANGE_END > TOTAL )) && {
@@ -121,4 +313,4 @@ for fname in "${SLICE[@]}"; do
   } >>"$OUTFILE"
 done
 
-echo "Wrote ${#SLICE[@]} file(s) to '$OUTFILE'."
+echo "Wrote ${#SLICE[@]} file(s) from '$DIR' to '$OUTFILE'."

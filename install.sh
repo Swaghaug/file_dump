@@ -1,8 +1,8 @@
-# file_dump/install.sh
 #!/usr/bin/env bash
 set -euo pipefail
 
 INSTALL_DIR=${INSTALL_DIR:-"$HOME/.local/bin"}
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/file_dump"
 SCRIPT_NAME="file_dump"
 ALIAS_NAME="fdump"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,11 @@ BASHRC="$HOME/.bashrc"
 echo "→ Installing $SCRIPT_NAME into $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 install -m 0755 "$SRC_DIR/file_dump.sh" "$INSTALL_DIR/$SCRIPT_NAME"
-install -m 0644 "$SRC_DIR/excluded_filetypes.txt" "$INSTALL_DIR/excluded_filetypes.txt"
+
+echo "→ Installing default excluded_filetypes.txt"
+mkdir -p "$CONFIG_DIR"
+install -m 0644 "$SRC_DIR/excluded_filetypes.txt" "$CONFIG_DIR/excluded_filetypes.txt"
+install -m 0644 "$SRC_DIR/excluded_filetypes.txt" "$INSTALL_DIR/excluded_filetypes.txt" || true
 
 if ! grep -qE "^alias $ALIAS_NAME=" "$BASHRC"; then
   {
