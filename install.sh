@@ -28,4 +28,4 @@ else
   echo "→ Alias '$ALIAS_NAME' already present in $BASHRC"
 fi
 
-echo "✔ Installation complete.  Run: source \"$BASHRC\" or open a new shell."
+echo "✔ Installation complete.  Run: 'source $BASHRC' or open a new shell."

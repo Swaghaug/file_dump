@@ -3,35 +3,35 @@ set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--path DIR] [<directory>] [--git-root] [--range N:M] [--include PATTERNS] [--output FILE]
+Usage: $(basename "$0") [--path DIR] [<directory>] [--git-root] [--no-exclude] [--range N:M] [--include PATTERNS] [--output FILE]
 
-  --path DIR           Target directory to dump (recursive). Overrides positional <directory>.
-  <directory>          Back-compat positional path; ignored if --path is given.
-  --git-root           Ignore --path/positional/PWD and use the current Git repo root.
-  --range N:M          Dump only the N-th through M-th files (1-based, alphabetical).
-  --include PATTERNS   Comma-separated shell globs to include (e.g. '*.yml,*.yaml').
-                       When provided, only matching files are included.
-  --output FILE        Path of the output file (default: ./file_dump.txt).
+  --path DIR          Directory whose files will be dumped (recursively). Takes precedence over positional <directory>.
+  <directory>         Optional positional directory. Ignored if --path is provided.
+  --git-root          Use the current Git repo root as the target, ignoring --path/positional.
+  --no-exclude        Do not apply any exclusion rules.
+  --range N:M         Dump only the N-th through M-th files (1-based, alphabetical).
+  --include PATTERNS  Comma-separated shell globs to include (e.g. '*.yml,*.yaml'). Only matching files are included.
+  --output FILE       Path of the output file (default: ./file_dump.txt).
 
-If neither --git-root nor --path nor a positional <directory> is provided, the script targets PWD.
+If no --path or positional directory is given, defaults to the current working directory (PWD).
 
 Exclusions come from 'excluded_filetypes.txt' searched in order:
   1) Directory of this script
-  2) <target-directory>/excluded_filetypes.txt
+  2) <directory>/excluded_filetypes.txt
   3) \$XDG_CONFIG_HOME/file_dump/excluded_filetypes.txt
   4) \$HOME/.config/file_dump/excluded_filetypes.txt
 If none are found, a built-in default exclusion list is used.
 
 Examples
-  $(basename "$0")                                        # dump PWD
   $(basename "$0") --path ./services --include '*.yml,*.yaml' --output compose.txt
-  $(basename "$0") --git-root --include '*.yml,*.yaml'    # dump repo root
-  $(basename "$0") ./src --range 5:8 --output partial.txt # legacy positional path
+  $(basename "$0") ./src --range 5:8 --output partial.txt
+  $(basename "$0") --git-root --include '*.yml,*.yaml' --output all_compose.txt
+  $(basename "$0") --no-exclude                     # dump everything text-like in PWD
+  $(basename "$0")                                   # dumps PWD
 EOF
   exit 1
 }
 
-# Resolve script directory robustly
 SCRIPT_INVOCATION="${BASH_SOURCE[0]:-$0}"
 SCRIPT_PATH="$(command -v "$SCRIPT_INVOCATION" || true)"
 if [[ -z "$SCRIPT_PATH" ]]; then
@@ -43,17 +43,17 @@ RANGE_START=1
 RANGE_END=0
 OUTFILE="file_dump.txt"
 USE_GIT_ROOT=0
-PATH_ARG=""
+NO_EXCLUDE=0
 declare -a INCLUDE_GLOBS=()
 
-# Accept optional first arg as directory unless it's a flag (back-compat)
-POS_DIR=""
+DIR=""
+PATH_ARG=""
+
 if (( $# > 0 )) && [[ ! "${1:-}" =~ ^- ]]; then
-  POS_DIR="$1"
+  DIR="$1"
   shift
 fi
 
-# Parse flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --path)
@@ -63,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --git-root)
       USE_GIT_ROOT=1
+      shift
+      ;;
+    --no-exclude)
+      NO_EXCLUDE=1
       shift
       ;;
     --range)
@@ -92,7 +96,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Determine target directory (precedence: --git-root > --path > positional > PWD)
 if (( USE_GIT_ROOT == 1 )); then
   if git_root="$(git -C . rev-parse --show-toplevel 2>/dev/null)"; then
     DIR="$git_root"
@@ -100,12 +103,12 @@ if (( USE_GIT_ROOT == 1 )); then
     echo "Error: --git-root used outside a git repository." >&2
     exit 2
   fi
-elif [[ -n "$PATH_ARG" ]]; then
-  DIR="$PATH_ARG"
-elif [[ -n "$POS_DIR" ]]; then
-  DIR="$POS_DIR"
 else
-  DIR="$(pwd)"
+  if [[ -n "$PATH_ARG" ]]; then
+    DIR="$PATH_ARG"
+  elif [[ -z "$DIR" ]]; then
+    DIR="$(pwd)"
+  fi
 fi
 
 [[ -d "$DIR" ]] || { echo "Error: '$DIR' is not a directory." >&2; exit 2; }
@@ -124,16 +127,15 @@ add_rules() {
   done <"$file"
 }
 
-add_default_rules_if_empty() {
-  if (( ${#EXCL_EXT[@]} == 0 && ${#EXCL_DIR[@]} == 0 )); then
-    while IFS= read -r line; do
-      [[ -z "$line" || "$line" =~ ^# ]] && continue
-      if [[ "$line" == */ ]]; then
-        EXCL_DIR+=("${line%/}")
-      else
-        EXCL_EXT+=("${line,,}")
-      fi
-    done <<'DEFAULT_RULES'
+add_builtin_default_rules() {
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    if [[ "$line" == */ ]]; then
+      EXCL_DIR+=("${line%/}")
+    else
+      EXCL_EXT+=("${line,,}")
+    fi
+  done <<'DEFAULT_RULES'
 .git/
 .svn/
 .hg/
@@ -234,42 +236,45 @@ bin/
 .map
 .br
 DEFAULT_RULES
-  fi
 }
 
-# Load exclusion rules (merge if multiple exist)
-add_rules "$SCRIPT_DIR/excluded_filetypes.txt"
-add_rules "$DIR/excluded_filetypes.txt"
-if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
-  add_rules "$XDG_CONFIG_HOME/file_dump/excluded_filetypes.txt"
+if (( NO_EXCLUDE == 0 )); then
+  rules_loaded=0
+  add_rules "$SCRIPT_DIR/excluded_filetypes.txt" && rules_loaded=1 || true
+  add_rules "$DIR/excluded_filetypes.txt" && rules_loaded=1 || true
+  if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+    add_rules "$XDG_CONFIG_HOME/file_dump/excluded_filetypes.txt" && rules_loaded=1 || true
+  fi
+  add_rules "$HOME/.config/file_dump/excluded_filetypes.txt" && rules_loaded=1 || true
+  if (( rules_loaded == 0 )); then
+    add_builtin_default_rules
+  fi
+else
+  EXCL_EXT=()
+  EXCL_DIR=()
 fi
-add_rules "$HOME/.config/file_dump/excluded_filetypes.txt"
-add_default_rules_if_empty
 
-# Collect relative paths
 mapfile -d '' FILES < <(find "$DIR" -type f -printf '%P\0' | sort -z)
 
-# Filter exclusions and includes
 filtered=()
 for f in "${FILES[@]}"; do
   skip=0
 
-  # directory-name filters
-  for d in "${EXCL_DIR[@]}"; do
-    if [[ "$f" == "$d/"* || "$f" == */"$d/"* || "$f" == "$d" ]]; then
-      skip=1; break
-    fi
-  done
-  ((skip)) && continue
+  if (( NO_EXCLUDE == 0 )); then
+    for d in "${EXCL_DIR[@]}"; do
+      if [[ "$f" == "$d/"* || "$f" == */"$d/"* || "$f" == "$d" ]]; then
+        skip=1; break
+      fi
+    done
+    ((skip)) && continue
 
-  # extension filters
-  ext=".${f##*.}"; ext="${ext,,}"
-  for e in "${EXCL_EXT[@]}"; do
-    if [[ "$ext" == "$e" ]]; then skip=1; break; fi
-  done
-  ((skip)) && continue
+    ext=".${f##*.}"; ext="${ext,,}"
+    for e in "${EXCL_EXT[@]}"; do
+      if [[ "$ext" == "$e" ]]; then skip=1; break; fi
+    done
+    ((skip)) && continue
+  fi
 
-  # include-glob filters (if provided)
   if (( ${#INCLUDE_GLOBS[@]} > 0 )); then
     inc=0
     for pat in "${INCLUDE_GLOBS[@]}"; do
@@ -296,7 +301,6 @@ SLICE=("${FILES[@]:$((RANGE_START-1)):$((RANGE_END-RANGE_START+1))}")
 
 : >"$OUTFILE"
 
-# Optional: tree dump at top if available
 if command -v tree >/dev/null; then
   {
     echo "# Directory structure:"
